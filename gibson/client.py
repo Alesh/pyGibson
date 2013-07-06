@@ -22,7 +22,11 @@ class Client(object):
     def connected(self):
         return all([item[0] is not None for item in self._servers])
     
+    @property
+    def lastError(self):
+        return self._last_error
     
+
     def close(self):
         for item in self._servers:
             sock, _, _, _ = item
@@ -61,6 +65,23 @@ class Client(object):
         return self._request(key, query)
 
 
+    def lock(self, key, timeout):
+        query = protocol.make_query(protocol.OP_LOCK, self._encoding, key, timeout)
+        return self._request(key, query)
+
+
+    def unlock(self, key):
+        query = protocol.make_query(protocol.OP_UNLOCK, self._encoding, key)
+        return self._request(key, query)
+    
+    
+    # ToDo: multiple keys operation needs solution for selecting server
+    #def mset(self, prefix, value):
+    #    query = protocol.make_query(protocol.OP_MSET, self._encoding, prefix, value)
+    #    return self._request(prefix, query)
+
+
+
     def _request(self, key, query):
         sock, connection = self._select_socket(key)
         try:
@@ -79,6 +100,7 @@ class Client(object):
 
     def _recv_result(self, sock):
         buff = b''
+        self._last_error = None
         buff = sock.recv(self._buffer_size)
         code, buff = protocol.parse_code(buff)
         if code in (protocol.REPL_ERR, protocol.REPL_ERR_NOT_FOUND,
@@ -90,12 +112,11 @@ class Client(object):
                 encoding, datasize, buff = protocol.parse_result_header(buff)
                 while len(buff)<datasize:
                     buff += sock.recv(self._buffer_size)
-                self._last_error = None
                 result =  buff if isinstance(buff, str) else buff.decode(self._encoding)
                 if encoding==protocol.GB_ENC_NUMBER:
                     result = protocol.conv2number(result)
                 elif encoding==protocol.GB_ENC_LZF:
-                    pass # now reserved
+                    raise NotImplementedError('LZF encoding is not implemented') # now reserved
                 return result
             else:
                 return True
