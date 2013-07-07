@@ -63,6 +63,11 @@ def make_query(op_code, encoding, *args):
     return struct.pack(QUERY_HEADER_FMT, query_length, op_code)+query_data
 
 
+def _explain_query(query):
+    size, cmd = struct.unpack(QUERY_HEADER_FMT, query[:struct.calcsize(QUERY_HEADER_FMT)])
+    return (cmd, size)
+    
+
 def parse_code(data):
     size = struct.calcsize(RESPONSE_CODE_FMT)
     remainder = data[size:]

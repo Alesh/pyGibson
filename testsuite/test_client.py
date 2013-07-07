@@ -1,13 +1,18 @@
 import time
 import unittest
-import gibson.client
+import logging
+import gibson
 
-servers = ["/home/research/gibson.sock"]
+servers = ["/tmp/gibson1.sock",
+           "/tmp/gibson2.sock",
+           "/tmp/gibson3.sock",
+           "/tmp/gibson4.sock"]
 
 class test_Client(unittest.TestCase):
     
     def setUp(self):
-        self.client = gibson.client.Client(servers)
+        logging.basicConfig(level=logging.DEBUG)
+        self.client = gibson.Client(servers, debug=True)
     
     def test_Connected(self):
         self.assertEqual(self.client.connected, True)
@@ -71,8 +76,18 @@ class test_Client(unittest.TestCase):
         self.client.set('KeyH', temp, 1)
         self.assertEqual(self.client.get('KeyH'), temp)
         
-        
-        
+    
+    def test_SetGet3(self):
+        data = dict()
+        for N in range(1024):
+            key = 'Key'+str(N)
+            data[key] = 'Val'+str(N)
+            self.client.set(key, data[key], 3)
+        time.sleep(1)
+        for N in range(1024):
+            key = 'Key'+str(N)
+            self.assertEqual(self.client.get(key), data[key])
+
     
     def tearDown(self):
         self.client.close()
