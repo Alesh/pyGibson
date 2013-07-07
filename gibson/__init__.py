@@ -62,46 +62,107 @@ class Client(object):
     
 
     def ttl(self, key, ttl):
-        """ Sets TTL for `key` in store."""
+        """ Sets TTL for `key`."""
         query = protocol.make_query(protocol.OP_TTL, self._encoding, key, ttl)
         return self._request(key, query)
 
         
     def get(self, key):
-        """ Returns value for `key` from store. """
+        """ Returns value for `key`. """
         query = protocol.make_query(protocol.OP_GET, self._encoding, key)
         return self._request(key, query)
 
    
     def delete(self, key):
-        """ Deletes value for `key` from store. """
+        """ Deletes value for `key`. """
         query = protocol.make_query(protocol.OP_DEL, self._encoding, key)
         return self._request(key, query)
 
    
     def inc(self, key):
-        """ Increments value for `key` in store. """
+        """ Increments value for `key`. """
         query = protocol.make_query(protocol.OP_INC, self._encoding, key)
         return self._request(key, query)
 
    
     def dec(self, key):
-        """ Decrements value for `key` in store. """
+        """ Decrements value for `key`. """
         query = protocol.make_query(protocol.OP_DEC, self._encoding, key)
         return self._request(key, query)
 
 
     def lock(self, key, timeout):
-        """ Locks `key` in store. """
+        """ Locks `key`. """
         query = protocol.make_query(protocol.OP_LOCK, self._encoding, key, timeout)
         return self._request(key, query)
 
 
     def unlock(self, key):
-        """ Unlocks `key` in store. """
+        """ Unlocks `key`. """
         query = protocol.make_query(protocol.OP_UNLOCK, self._encoding, key)
         return self._request(key, query)
 
+
+    def mset(self, prefix, value):
+        """ Sets `value` for all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MSET, self._encoding, prefix, value)
+        return self._mrequest(protocol.OP_MSET, prefix, query)
+
+
+    def mget(self, prefix):
+        """ Returs key-value dict for all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MGET, self._encoding, prefix)
+        return self._mrequest(protocol.OP_MGET, prefix, query)
+
+
+    def mttl(self, prefix, timeout):
+        """ Sets TTL for all key with `prefix`."""
+        query = protocol.make_query(protocol.OP_MTTL, self._encoding, prefix, timeout)
+        return self._mrequest(protocol.OP_MTTL, prefix, query)
+
+
+    def mdelete(self, prefix):
+        """ Detetes all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MDEL, self._encoding, prefix)
+        return self._mrequest(protocol.OP_MDEL, prefix, query)
+    
+    
+    def _mrequest(self, op, prefix, query):
+        result = list()
+        connections = self._connection_selector(self._connections, None, prefix)
+        if connections:
+            for connection in connections:
+                if self.debug:
+                    logging.debug(
+                        "Sending mquery to '{0}'; prefix='{1}'; cmd={2}, size={3}".format(
+                            str(connection.address), prefix, *protocol._explain_query(query)))
+                try:
+                    self._send_query(connection.socket, query)
+                except socket.error as err:
+                    if err.errno != errno.EPIPE:
+                        raise
+                    connection.reconnect()
+                    self._send_query(connection.socket, query)
+                result.append(self._recv_result(connection.socket))
+            return self._mresult(op, result)
+        else:
+            raise RuntimeError("The connection selector has returned `None`.")
+    
+    
+    def _mresult(self, op, results):
+        result = None
+        if op in (protocol.OP_MSET, protocol.OP_MTTL, protocol.OP_MDEL):
+            result = 0
+            for number in results:
+                if number is not None:
+                    result += number
+        elif op in (protocol.OP_MGET, ):
+            result = dict()
+            for item in results:
+                if item is not None:
+                    result.update(item)
+        return result
+        
 
     def _request(self, key, query):
         def _send_query(sock, query):
@@ -116,15 +177,21 @@ class Client(object):
                     "Sending query to '{0}'; key='{1}'; cmd={2}, size={3}".format(
                         str(connection.address), key, *protocol._explain_query(query)))
             try:
-                _send_query(connection.socket, query)
+                self._send_query(connection.socket, query)
             except socket.error as err:
                 if err.errno != errno.EPIPE:
                     raise
                 connection.reconnect()
-                _send_query(connection.socket, query)
+                self._send_query(connection.socket, query)
             return self._recv_result(connection.socket)
         else:
             raise RuntimeError("The connection selector has returned `None`.")
+
+
+    def _send_query(self, sock, query):
+        while query:
+            sent_bytes = sock.send(query)
+            query = query[sent_bytes:]        
 
 
     def _recv_result(self, sock):
@@ -136,11 +203,13 @@ class Client(object):
                     protocol.REPL_ERR_NAN, protocol.REPL_ERR_MEM, protocol.REPL_ERR_LOCKED):
             self._last_error = code
             return None
-        elif code!=protocol.REPL_KVAL:
+
+        encoding, datasize, buff = protocol.parse_result_header(buff)
+        while len(buff)<datasize:
+            buff += sock.recv(self._buffer_size)
+
+        if code!=protocol.REPL_KVAL:
             if code==protocol.REPL_VAL:
-                encoding, datasize, buff = protocol.parse_result_header(buff)
-                while len(buff)<datasize:
-                    buff += sock.recv(self._buffer_size)
                 result =  buff if isinstance(buff, str) else buff.decode(self._encoding)
                 if encoding==protocol.GB_ENC_NUMBER:
                     result = protocol.conv2number(result)
@@ -150,4 +219,17 @@ class Client(object):
             else:
                 return True
         else:
-            pass # ToDo: read multi result
+            result = dict()
+            items_cnt, buff = protocol.parse_size(buff)
+            while items_cnt:
+                key_size, buff = protocol.parse_size(buff)
+                key = buff[:key_size]; buff = buff[key_size:]
+                encoding, value_size, buff = protocol.parse_result_header(buff)
+                value = buff[:value_size]; buff = buff[value_size:]
+                if encoding==protocol.GB_ENC_NUMBER:
+                    value = protocol.conv2number(value)
+                result[key] = value
+                items_cnt -= 1
+            return result
+
+        

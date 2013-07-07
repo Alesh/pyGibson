@@ -41,6 +41,7 @@ COUNTER_FMT         = '=q'  # Warning: only for 64 bit servers
 QUERY_HEADER_FMT    = '=IH'
 RESPONSE_CODE_FMT   = '=H'
 RESPONSE_HEADER_FMT = '=BQ' # Warning: only for 64 bit servers
+SIZE_FMT = '=Q'
 
 GB_ENC_PLAIN  = 0x00 # Raw string data follows.
 GB_ENC_LZF    = 0x01 # Compressed data, this is a reserved value not used for replies.
@@ -80,5 +81,13 @@ def parse_result_header(data):
     remainder = data[size:]
     encoding, datasize = struct.unpack(RESPONSE_HEADER_FMT, data[:size])
     return encoding, datasize, remainder
+
+def parse_size(data):
+    size = struct.calcsize(SIZE_FMT)
+    remainder = data[size:]
+    result = struct.unpack(SIZE_FMT, data[:size])[0]
+    return result, remainder
+    
+    
 
     

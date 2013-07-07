@@ -16,10 +16,10 @@ class test_Client(unittest.TestCase):
     
     def test_Connected(self):
         self.assertEqual(self.client.connected, True)
-
+    
     def test_SetGet(self):
-        self.client.set('KeyA', 'OK', 1)
-        self.assertEqual(self.client.get('KeyA'), 'OK')
+        self.client.set('Key', 'OK', 1)
+        self.assertEqual(self.client.get('Key'), 'OK')
     
     def test_SetGetDelGet(self):
         self.client.set('KeyA', 'OK', 1)
@@ -87,7 +87,50 @@ class test_Client(unittest.TestCase):
         for N in range(1024):
             key = 'Key'+str(N)
             self.assertEqual(self.client.get(key), data[key])
+    
+    
+    def test_MSetMGet(self):
+        self.client.set('MKey#A#A', 'OK', 1)
+        self.client.set('MKey#B#B', 'OK', 1)
+        self.client.set('MKey#A#C', 'OK', 1)
+        self.client.set('MKey#B#D', 'OK', 1)
+        self.assertEqual(self.client.mset('MKey#', 'OK!'), 4)
+        self.assertEqual(self.client.get('MKey#A#A'), 'OK!')
+        self.assertEqual(self.client.get('MKey#B#B'), 'OK!')
+        self.assertEqual(self.client.get('MKey#A#C'), 'OK!')
+        self.assertEqual(self.client.get('MKey#B#D'), 'OK!')
+        self.assertDictEqual(self.client.mget('MKey#'),
+            {'MKey#A#A':'OK!','MKey#B#B':'OK!','MKey#A#C':'OK!','MKey#B#D':'OK!'})
+        self.assertEqual(self.client.mset('MKey#A#', 'OK!A'), 2)
+        self.assertEqual(self.client.mset('MKey#B#', 'OK!B'), 2)
+        self.assertDictEqual(self.client.mget('MKey#'),
+            {'MKey#A#A':'OK!A','MKey#B#B':'OK!B','MKey#A#C':'OK!A','MKey#B#D':'OK!B'})
+        
+    
+    def test_MTTL(self):
+        self.client.set('MKey#A#A', 'OK', 3)
+        self.client.set('MKey#B#B', 'OK', 3)
+        self.client.set('MKey#A#C', 'OK', 3)
+        self.client.set('MKey#B#D', 'OK', 3)
+        self.assertDictEqual(self.client.mget('MKey#'),
+            {'MKey#A#A':'OK','MKey#B#B':'OK','MKey#A#C':'OK','MKey#B#D':'OK'})
+        self.assertEqual(self.client.mttl('MKey#A#', 1), 2)
+        time.sleep(1)
+        self.assertDictEqual(self.client.mget('MKey#'),{'MKey#B#B':'OK','MKey#B#D':'OK'})
 
+
+    def test_MDel(self):
+        self.client.set('DKey#A#A', 'OK', 3)
+        self.client.set('DKey#B#B', 'OK', 3)
+        self.client.set('DKey#A#C', 'OK', 3)
+        self.client.set('DKey#B#D', 'OK', 3)
+        self.assertDictEqual(self.client.mget('DKey#'),
+            {'DKey#A#A':'OK','DKey#B#B':'OK','DKey#A#C':'OK','DKey#B#D':'OK'})
+        self.assertEqual(self.client.mdelete('DKey#A#'), 2)
+        self.assertDictEqual(self.client.mget('DKey#'),{'DKey#B#B':'OK','DKey#B#D':'OK'})
+        self.assertEqual(self.client.mdelete('DKey#B#'), 2)
+        self.assertDictEqual(self.client.mget('DKey#'),{})
+        
     
     def tearDown(self):
         self.client.close()
