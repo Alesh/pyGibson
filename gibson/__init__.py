@@ -126,9 +126,51 @@ class Client(object):
         query = protocol.make_query(protocol.OP_MDEL, self._encoding, prefix)
         return self._mrequest(protocol.OP_MDEL, prefix, query)
     
+
+    def minc(self, prefix):
+        """ Increments values of  all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MINC, self._encoding, prefix)
+        return self._mrequest(protocol.OP_MINC, prefix, query)
+
+
+    def mdec(self, prefix):
+        """ Decrements values of all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MDEC, self._encoding, prefix)
+        return self._mrequest(protocol.OP_MDEC, prefix, query)
+
+
+    def mlock(self, prefix, timeout):
+        """ Locks all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MLOCK, self._encoding, prefix, timeout)
+        return self._mrequest(protocol.OP_MLOCK, prefix, query)
+
+
+    def munlock(self, prefix):
+        """ Unlocks all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MUNLOCK, self._encoding, prefix)
+        return self._mrequest(protocol.OP_MUNLOCK, prefix, query)
+
+    def count(self, prefix):
+        """ Counts all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_COUNT, self._encoding, prefix)
+        return self._mrequest(protocol.OP_COUNT, prefix, query)
+
+
+    def sizeOf(self, key):
+        """ Returns size of value for `key`. """
+        query = protocol.make_query(protocol.OP_SIZEOF, self._encoding, key)
+        return self._request(key, query)
+    
+
+    def msizeOf(self, prefix):
+        """ Returns size of value for all key with `prefix`. """
+        query = protocol.make_query(protocol.OP_MSIZEOF, self._encoding, prefix)
+        return self._mrequest(protocol.OP_MSIZEOF, prefix, query)
+
     
     def _mrequest(self, op, prefix, query):
         result = list()
+        errors = list()
         connections = self._connection_selector(self._connections, None, prefix)
         if connections:
             for connection in connections:
@@ -144,6 +186,10 @@ class Client(object):
                     connection.reconnect()
                     self._send_query(connection.socket, query)
                 result.append(self._recv_result(connection.socket))
+                errors.append(self._last_error)
+            if any(errors):
+                self._last_error = errors
+            print 'errors', errors
             return self._mresult(op, result)
         else:
             raise RuntimeError("The connection selector has returned `None`.")
@@ -151,7 +197,9 @@ class Client(object):
     
     def _mresult(self, op, results):
         result = None
-        if op in (protocol.OP_MSET, protocol.OP_MTTL, protocol.OP_MDEL):
+        print 'results', results
+        if op in (protocol.OP_MSET, protocol.OP_MTTL, protocol.OP_MDEL, protocol.OP_COUNT,
+                  protocol.OP_MINC, protocol.OP_MDEC, protocol.OP_MLOCK, protocol.OP_MUNLOCK, protocol.OP_MSIZEOF):
             result = 0
             for number in results:
                 if number is not None:
