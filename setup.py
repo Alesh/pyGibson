@@ -5,6 +5,6 @@ setup(
     name = "pyGibson",
     description = "The client for Gibson key-value storage.",
     packages = find_packages(),
-    install_requires = ['tornado>=3.0'],
+    install_requires = [],
 )
 
